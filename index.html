@@ -13,6 +13,7 @@
             --light-square: #eed299; /* Cream/Light Gold */
             --dark-square: #b88648; /* Dark Brown/Coffee */
             --selected-square: #98c6ff; /* Soft Blue for selection */
+            --last-move: #f0c578; /* Subtle Amber for last move */
             --potential-move: rgba(0, 0, 0, 0.25); /* Darker semi-transparent dot */
             --font-inter: 'Inter', sans-serif;
         }
@@ -67,9 +68,14 @@
         }
         .square.light { background-color: var(--light-square); }
         .square.dark { background-color: var(--dark-square); }
-        .square.selected { background-color: var(--selected-square); }
 
-        /* Piece Styling - Slightly larger and bolder */
+        /* Highlights */
+        .square.selected { background-color: var(--selected-square); }
+        .square.last-move { background-color: var(--last-move) !important; }
+        .square.light.last-move { background-color: color-mix(in srgb, var(--last-move) 80%, var(--light-square)); }
+        .square.dark.last-move { background-color: color-mix(in srgb, var(--last-move) 80%, var(--dark-square)); }
+
+        /* Piece Styling */
         .piece {
             font-size: clamp(35px, 7vmin, 65px);
             line-height: 1;
@@ -114,6 +120,43 @@
             transform: translateY(0);
             pointer-events: all;
         }
+
+        /* Promotion Modal Styling */
+        .promotion-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .promotion-options {
+            background-color: #1f2937;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.8);
+            border: 2px solid #6366f1;
+        }
+
+        .promotion-option {
+            background-color: #6366f1;
+            color: white;
+            font-size: 40px;
+            width: 60px;
+            height: 60px;
+            margin: 0 8px;
+            border-radius: 8px;
+            transition: background-color 0.15s;
+        }
+        .promotion-option:hover {
+            background-color: #4f46e5;
+        }
+
     </style>
 </head>
 <body>
@@ -142,6 +185,11 @@
                 <button id="reset-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl shadow-2xl transition duration-200 transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-red-500/50">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H8a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.098 7.159a5.002 5.002 0 008.892 2.193 1 1 0 01.077 1.705 7.002 7.002 0 01-12.787-3.093 1 1 0 011.818.995z" clip-rule="evenodd" /></svg>
                     Restart Game
+                </button>
+
+                <!-- Draw Offer Button -->
+                <button id="draw-offer-button" class="bg-yellow-500 hover:bg-yellow-600 text-gray-900 font-bold py-3 px-6 rounded-xl shadow-2xl transition duration-200 transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-yellow-500/50">
+                    Offer Draw
                 </button>
 
                 <!-- Custom AI Difficulty Dropdown -->
@@ -200,7 +248,7 @@
     let GameState = {
         board: [], turn: 'w', castling: 'KQkq', enPassant: '-', halfMoveClock: 0,
         fullMoveNumber: 1, selectedSquare: null, possibleMoves: [], isGameOver: false,
-        history: [], aiDepth: 3, promotionPending: null,
+        history: [], aiDepth: 3, promotionPending: null, lastMove: null, // [from: [r, c], to: [r, c]]
     };
 
     const DIRECTIONS = [
@@ -249,6 +297,7 @@
         GameState.selectedSquare = null;
         GameState.possibleMoves = [];
         GameState.promotionPending = null;
+        GameState.lastMove = null;
     }
 
     // ====================================================================================
@@ -260,13 +309,14 @@
     const pgnEl = document.getElementById('pgn-output');
     const promotionModal = document.getElementById('promotion-modal');
     const promotionButtons = document.getElementById('promotion-buttons');
+    const drawButton = document.getElementById('draw-offer-button');
 
     const dropdownToggle = document.getElementById('ai-dropdown-toggle');
     const dropdownMenu = document.getElementById('ai-dropdown-menu');
     const difficultyDisplay = document.getElementById('ai-difficulty-display');
     const dropdownArrow = document.getElementById('dropdown-arrow');
 
-    // Custom Dropdown Logic
+    // --- Custom Dropdown Logic ---
     dropdownToggle.addEventListener('click', () => {
         dropdownMenu.classList.toggle('active');
         dropdownArrow.classList.toggle('rotate-180');
@@ -296,6 +346,23 @@
             dropdownArrow.classList.remove('rotate-180');
         }
     });
+
+    // --- Status Message Utility ---
+    let statusTimeout = null;
+    function showTemporaryStatus(message, isError = false) {
+        if (statusTimeout) clearTimeout(statusTimeout);
+        
+        statusEl.textContent = message;
+        
+        if (isError) {
+            statusEl.classList.remove('bg-gray-800', 'text-yellow-300', 'border-yellow-500/50');
+            statusEl.classList.add('bg-red-600', 'text-white', 'border-red-500');
+        }
+
+        statusTimeout = setTimeout(() => {
+            updateUIState(); // Revert to the default turn message
+        }, 2000); // Display for 2 seconds
+    }
 
     /** Renders the entire chess board and its pieces to the DOM. */
     function renderBoard() {
@@ -329,8 +396,16 @@
     /** Updates the UI based on the current GameState. */
     function updateUIState() {
         document.querySelectorAll('.square').forEach(sq => {
-            sq.classList.remove('selected', 'potential-move', 'potential-capture');
+            sq.classList.remove('selected', 'potential-move', 'potential-capture', 'last-move');
         });
+
+        // Highlight Last Move
+        if (GameState.lastMove) {
+            const [r1, c1] = GameState.lastMove.from;
+            const [r2, c2] = GameState.lastMove.to;
+            document.getElementById(`sq-${r1}-${c1}`).classList.add('last-move');
+            document.getElementById(`sq-${r2}-${c2}`).classList.add('last-move');
+        }
 
         if (GameState.selectedSquare) {
             const [r, c] = GameState.selectedSquare;
@@ -350,24 +425,25 @@
         }
 
         // Update Status
+        drawButton.disabled = GameState.turn !== 'w' || GameState.isGameOver;
+
         if (GameState.isGameOver) {
             const result = isGameOver(GameState.board, GameState.turn, GameState.halfMoveClock);
             if (result.checkmate) {
                 const winner = GameState.turn === 'w' ? 'Black' : 'White';
                 statusEl.textContent = `Checkmate! ${winner} Wins!`;
-                statusEl.classList.remove('text-yellow-300', 'bg-gray-700');
+                statusEl.classList.remove('text-yellow-300', 'bg-gray-800');
                 statusEl.classList.add('bg-red-800', 'text-white', 'border-red-500/50');
-            } else if (result.stalemate || result.fiftyMove) {
-                statusEl.textContent = "Draw! Game Over by Stalemate or Fifty-Move Rule.";
-                statusEl.classList.remove('text-yellow-300', 'bg-gray-700');
+            } else if (result.stalemate || result.fiftyMove || result.drawOffer) {
+                let reason = result.stalemate ? "Stalemate" : (result.fiftyMove ? "Fifty-Move Rule" : "Draw Agreed");
+                statusEl.textContent = `Draw! Game Over by ${reason}.`;
+                statusEl.classList.remove('text-yellow-300', 'bg-gray-800');
                 statusEl.classList.add('bg-blue-800', 'text-white', 'border-blue-500/50');
             }
         } else {
-            statusEl.textContent = `${GameState.turn === 'w' ? "Player (White)" : "AI (Black)"}'s Turn`;
             const inCheck = isKingInCheck(GameState.board, GameState.turn);
-            if (inCheck) {
-                statusEl.textContent = `${GameState.turn === 'w' ? "Player (White)" : "AI (Black)"} is in Check!`;
-            }
+            statusEl.textContent = `${GameState.turn === 'w' ? "Player (White)" : "AI (Black)"}'s Turn${inCheck ? ' - IN CHECK!' : ''}`;
+
             statusEl.classList.remove('bg-red-800', 'bg-blue-800', 'text-white', 'border-red-500/50', 'border-blue-500/50');
             statusEl.classList.add('bg-gray-800', 'text-yellow-300', 'border-yellow-500/50');
         }
@@ -378,6 +454,7 @@
 
     /** Shows the pawn promotion modal. */
     function showPromotionModal(pendingMove) {
+        // ... (Promotion modal logic remains the same) ...
         GameState.promotionPending = pendingMove;
         promotionButtons.innerHTML = '';
         const pieces = GameState.turn === 'w' ? ['Q', 'R', 'B', 'N'] : ['q', 'r', 'b', 'n'];
@@ -399,7 +476,7 @@
 
     /** Generates all pseudo-legal moves for a given piece on the board. */
     function generatePieceMoves(board, r, c) {
-        // ... (Logic remains largely the same as before) ...
+        // ... (Piece move logic remains largely the same) ...
         const moves = [];
         const pieceChar = board[r][c];
         const isWhite = pieceChar === pieceChar.toUpperCase();
@@ -511,7 +588,7 @@
                 }
 
                 // Castling
-                if (pieceType === 'k' && r === (isWhite ? 7 : 0) && c === 4) {
+                if (r === (isWhite ? 7 : 0) && c === 4) {
                     const opponent = opponentColor;
                     const castlingRights = GameState.castling;
                     const homeRow = isWhite ? 7 : 0;
@@ -550,15 +627,14 @@
             for (let c_s = 0; c_s < 8; c_s++) {
                 const piece = board[r_s][c_s];
                 if (attackerPieces.includes(piece)) {
+                    // Temporarily use generatePieceMoves for pseudo-legal targets
                     const pseudoMoves = generatePieceMoves(board, r_s, c_s).filter(m => !m.promotion);
 
                     for (const move of pseudoMoves) {
                         if (move.to[0] === r && move.to[1] === c) {
-                            // Pawns attack diagonally, King attacks all around, others don't matter as much.
+                            // Pawns attack diagonally
                             if (piece.toLowerCase() === 'p') {
                                 if (Math.abs(c_s - c) === 1) return true;
-                            } else if (piece.toLowerCase() === 'k') {
-                                if (Math.abs(r_s - r) <= 1 && Math.abs(c_s - c) <= 1) return true;
                             } else {
                                 return true;
                             }
@@ -600,7 +676,9 @@
                 if (playerPieces.includes(pieceChar)) {
                     const pseudoMoves = generatePieceMoves(board, r, c);
                     for (const move of pseudoMoves) {
-                        const nextState = makeMove(board, move, GameState.castling, GameState.enPassant, GameState.halfMoveClock);
+                        // Use a copy of GameState for purity
+                        const tempState = { ...GameState, board, turn };
+                        const nextState = makeMove(tempState.board, move, tempState.castling, tempState.enPassant, tempState.halfMoveClock);
                         if (!isKingInCheck(nextState.board, turn)) {
                             legalMoves.push(move);
                         }
@@ -661,22 +739,28 @@
             else if (c2 === 2) { newBoard[homeRow][3] = newBoard[homeRow][0]; newBoard[homeRow][0] = '.'; }
         }
 
-        // 4. Castling rights update (Fix: Includes capture of a rook)
+        // 4. Castling rights update
+        // If the King moves, all rights for that color are lost
         if (pieceChar === 'K') newCastling = newCastling.replace(/[KQ]/g, '');
         if (pieceChar === 'k') newCastling = newCastling.replace(/[kq]/g, '');
 
-        // Rook moves/captures from starting squares
-        if (r1 === 7 && c1 === 7) newCastling = newCastling.replace('K', ''); // White Kingside Rook moves
-        if (r1 === 7 && c1 === 0) newCastling = newCastling.replace('Q', ''); // White Queenside Rook moves
-        if (r1 === 0 && c1 === 7) newCastling = newCastling.replace('k', ''); // Black Kingside Rook moves
-        if (r1 === 0 && c1 === 0) newCastling = newCastling.replace('q', ''); // Black Queenside Rook moves
+        // Rook moves from starting squares (7,0=Q, 7,7=K for White; 0,0=q, 0,7=k for Black)
+        if (r1 === 7 && c1 === 7) newCastling = newCastling.replace('K', '');
+        if (r1 === 7 && c1 === 0) newCastling = newCastling.replace('Q', '');
+        if (r1 === 0 && c1 === 7) newCastling = newCastling.replace('k', '');
+        if (r1 === 0 && c1 === 0) newCastling = newCastling.replace('q', '');
 
-        // If a rook is captured on its starting square
-        const targetSq = coordToAlgebraic(move.to);
-        if (targetSq === 'a8') newCastling = newCastling.replace('q', '');
-        if (targetSq === 'h8') newCastling = newCastling.replace('k', '');
-        if (targetSq === 'a1') newCastling = newCastling.replace('Q', '');
-        if (targetSq === 'h1') newCastling = newCastling.replace('K', '');
+        // If a Rook is captured on its starting square (Bugfix here)
+        const targetPieceChar = currentBoard[r2][c2]; // Piece that was CAPTURED at the destination
+        if (targetPieceChar === 'R') { // White Rook captured
+            if (r2 === 7 && c2 === 7) newCastling = newCastling.replace('K', '');
+            if (r2 === 7 && c2 === 0) newCastling = newCastling.replace('Q', '');
+        }
+        if (targetPieceChar === 'r') { // Black Rook captured
+            if (r2 === 0 && c2 === 7) newCastling = newCastling.replace('k', '');
+            if (r2 === 0 && c2 === 0) newCastling = newCastling.replace('q', '');
+        }
+
 
         return {
             board: newBoard, enPassant: newEnPassant, castling: newCastling, halfMoveClock: newHalfMove
@@ -692,20 +776,24 @@
         return {
             checkmate: inCheck && !hasMoves,
             stalemate: !inCheck && !hasMoves,
-            fiftyMove: halfMoveClock >= 100
+            fiftyMove: halfMoveClock >= 100,
+            drawOffer: false // Will be set explicitly by handleDrawOffer
         };
     }
 
     /** Converts a move object into simplified PGN notation. */
     function generatePGN(move, oldBoard, newBoard, isCheckmate) {
+        // ... (PGN logic remains largely the same) ...
         const [r1, c1] = move.from;
         const [r2, c2] = move.to;
         const pieceChar = oldBoard[r1][c1];
         const pieceType = pieceChar.toUpperCase();
         const fromSq = coordToAlgebraic(move.from);
         const toSq = coordToAlgebraic(move.to);
-        const isCapture = newBoard[r2][c2] !== pieceChar; // Capture includes replacing piece or EP
-        const checkSuffix = isCheckmate ? '#' : (isKingInCheck(newBoard, GameState.turn === 'w' ? 'b' : 'w') ? '+' : '');
+        // A capture occurs if the target square is not empty, OR if it is an en-passant move
+        const isCapture = oldBoard[r2][c2] !== '.' || (pieceType === 'P' && c1 !== c2 && newBoard[r2][c2] === '.');
+        const nextTurn = GameState.turn === 'w' ? 'b' : 'w';
+        const checkSuffix = isCheckmate ? '#' : (isKingInCheck(newBoard, nextTurn) ? '+' : '');
 
         // 1. Castling
         if (pieceType === 'K' && Math.abs(c1 - c2) === 2) {
@@ -754,8 +842,12 @@
         if (GameState.selectedSquare === null) {
             if (isWhitePiece) {
                 GameState.selectedSquare = [r, c];
-                GameState.possibleMoves = generateLegalMoves(GameState.board, 'w');
-                GameState.possibleMoves = GameState.possibleMoves.filter(m => m.from[0] === r && m.from[1] === c);
+                // Only filter moves belonging to the selected piece
+                GameState.possibleMoves = generateLegalMoves(GameState.board, 'w').filter(m => m.from[0] === r && m.from[1] === c);
+            } else if (pieceChar !== '.') {
+                showTemporaryStatus("That's a black piece!", true);
+            } else {
+                showTemporaryStatus("Select a white piece to move.", true);
             }
         } else {
             const [r_from, c_from] = GameState.selectedSquare;
@@ -768,12 +860,16 @@
                     executeMove(move);
                 }
             } else if (isWhitePiece && r === r_from && c === c_from) {
+                // Deselect the piece if clicked again
                 GameState.selectedSquare = null;
                 GameState.possibleMoves = [];
             } else if (isWhitePiece) {
+                // Select a new white piece
                 GameState.selectedSquare = [r, c];
                 GameState.possibleMoves = generateLegalMoves(GameState.board, 'w').filter(m => m.from[0] === r && m.from[1] === c);
             } else {
+                // Illegal move attempted
+                showTemporaryStatus("Illegal move! Try again.", true);
                 GameState.selectedSquare = null;
                 GameState.possibleMoves = [];
             }
@@ -798,6 +894,9 @@
 
         const oldBoard = GameState.board;
         const newState = makeMove(oldBoard, move, GameState.castling, GameState.enPassant, GameState.halfMoveClock);
+
+        // Track last move for highlighting
+        GameState.lastMove = move;
 
         // Check for checkmate/check in the NEW state *after* the move is made
         const nextTurn = GameState.turn === 'w' ? 'b' : 'w';
@@ -828,7 +927,48 @@
     }
 
     // ====================================================================================
-    // 5. AI ENGINE (Minimax with Alpha-Beta Pruning)
+    // 5. DRAW OFFER LOGIC
+    // ====================================================================================
+
+    /** Determines if the AI accepts a draw based on a simple heuristic. */
+    function aiAcceptsDraw() {
+        // If material is roughly equal (evaluation close to zero)
+        const currentEval = evaluateBoard(GameState.board);
+        if (Math.abs(currentEval) < 0.5) {
+            return true;
+        }
+
+        // If the AI is down in material by a lot (but only if it's not a clear checkmate for the opponent)
+        // If the current player (White) is much better (positive eval) but the AI's depth is low, it might accept defensively.
+        if (currentEval > 3 && GameState.aiDepth <= 2) {
+            return Math.random() < 0.3; // 30% chance of accepting if losing and on easy mode
+        }
+
+        return false; // Default rejection
+    }
+
+    /** Handles the user offering a draw. */
+    function handleDrawOffer() {
+        if (GameState.turn !== 'w' || GameState.isGameOver) return;
+
+        showTemporaryStatus("Waiting for AI (Black) response...", false);
+        drawButton.disabled = true;
+
+        setTimeout(() => {
+            if (aiAcceptsDraw()) {
+                GameState.isGameOver = true;
+                GameState.history.push('1/2-1/2 (Draw agreed)');
+                showTemporaryStatus("AI Accepts the Draw! Game Over.", false);
+            } else {
+                showTemporaryStatus("AI Declines the Draw.", true);
+            }
+            drawButton.disabled = false;
+            updateUIState();
+        }, 1500);
+    }
+
+    // ====================================================================================
+    // 6. AI ENGINE (Minimax with Alpha-Beta Pruning)
     // ====================================================================================
 
     /** Evaluation function (Material + simple Positional) */
@@ -842,7 +982,7 @@
                 }
             }
         }
-        // Positional bonus for central pawns
+        // Positional bonus for central pawns (simple)
         for (let r = 1; r < 7; r++) {
             for (let c = 3; c < 5; c++) {
                 const pieceChar = board[r][c];
@@ -853,26 +993,27 @@
         return score;
     }
 
-    /** Minimax algorithm with Alpha-Beta Pruning. */
-    function minimax(board, turn, depth, alpha, beta, gameState) {
+    /** Minimax algorithm with Alpha-Beta Pruning. (Slightly simplified for pure function calls) */
+    function minimax(board, turn, depth, alpha, beta, currentGameState) {
         if (depth === 0) {
             return evaluateBoard(board);
         }
 
         const legalMoves = generateLegalMoves(board, turn);
-        const gameOver = isGameOver(board, turn, gameState.halfMoveClock);
+        const gameOver = isGameOver(board, turn, currentGameState.halfMoveClock);
 
         if (gameOver.checkmate) { return turn === 'w' ? -Infinity - depth : Infinity + depth; }
         if (gameOver.stalemate || gameOver.fiftyMove) { return 0; }
-        if (legalMoves.length === 0) { return 0; } // Should be covered by stalemate, but safe guard
+        if (legalMoves.length === 0) { return 0; }
 
         const nextTurn = turn === 'w' ? 'b' : 'w';
 
-        if (turn === 'w') { // Maximizing player (White)
+        if (turn === 'w') { // Maximizing player (White - not the AI)
             let maxEval = -Infinity;
             for (const move of legalMoves) {
-                const newState = makeMove(board, move, gameState.castling, gameState.enPassant, gameState.halfMoveClock);
-                const evaluation = minimax(newState.board, nextTurn, depth - 1, alpha, beta, newState);
+                const newState = makeMove(board, move, currentGameState.castling, currentGameState.enPassant, currentGameState.halfMoveClock);
+                const nextGameState = { ...currentGameState, ...newState }; // Pass updated state details
+                const evaluation = minimax(newState.board, nextTurn, depth - 1, alpha, beta, nextGameState);
                 maxEval = Math.max(maxEval, evaluation);
                 alpha = Math.max(alpha, evaluation);
                 if (beta <= alpha) break;
@@ -881,8 +1022,9 @@
         } else { // Minimizing player (Black/AI)
             let minEval = Infinity;
             for (const move of legalMoves) {
-                const newState = makeMove(board, move, gameState.castling, gameState.enPassant, gameState.halfMoveClock);
-                const evaluation = minimax(newState.board, nextTurn, depth - 1, alpha, beta, newState);
+                const newState = makeMove(board, move, currentGameState.castling, currentGameState.enPassant, currentGameState.halfMoveClock);
+                const nextGameState = { ...currentGameState, ...newState }; // Pass updated state details
+                const evaluation = minimax(newState.board, nextTurn, depth - 1, alpha, beta, nextGameState);
                 minEval = Math.min(minEval, evaluation);
                 beta = Math.min(beta, evaluation);
                 if (beta <= alpha) break;
@@ -893,38 +1035,38 @@
 
     /** Finds the best move for the AI using the Minimax algorithm. */
     function triggerAIMove() {
-        statusEl.textContent = `AI (Black) is thinking... (Depth ${GameState.aiDepth})`;
+        showTemporaryStatus(`AI (Black) is thinking... (Depth ${GameState.aiDepth})`);
         statusEl.classList.add('bg-blue-600', 'text-white', 'border-blue-500/50');
         statusEl.classList.remove('bg-gray-800', 'text-yellow-300', 'border-yellow-500/50');
 
-        // Since we are running in the main thread, we use a setTimeout of 0 to yield execution
-        // which prevents the UI from freezing, even if the calculation is still synchronous.
         setTimeout(() => {
             const bestMove = findBestAIMove(GameState.board, GameState.turn, GameState.aiDepth, GameState);
-
-            statusEl.classList.remove('bg-blue-600', 'text-white', 'border-blue-500/50');
 
             if (bestMove) {
                 executeMove(bestMove);
             } else {
                 console.warn("AI could not find a move. Game likely over.");
-                updateUIState(); // Force a final UI update
+                updateUIState();
             }
-        }, 0); // Execute search after UI has updated
+        }, 0);
     }
 
     /** Iterates through all legal moves and uses Minimax to find the highest-scoring move. */
     function findBestAIMove(board, turn, depth, gameState) {
         const legalMoves = generateLegalMoves(board, turn);
         let bestMove = null;
-        let minEval = Infinity;
+        let minEval = Infinity; // AI is minimizing (Black)
 
         // Shuffle moves to introduce randomness for equally good moves
         legalMoves.sort(() => Math.random() - 0.5);
 
         for (const move of legalMoves) {
+            // Need to calculate the new state properties (castling, enPassant, etc.) for the recursive call
             const newState = makeMove(board, move, gameState.castling, gameState.enPassant, gameState.halfMoveClock);
-            const evaluation = minimax(newState.board, 'w', depth - 1, -Infinity, Infinity, newState);
+            const nextGameState = { ...gameState, ...newState, turn: 'w' }; // Set turn to White for next recursive level
+
+            // Since we are black (minimizing), the recursive call is for White (maximizing)
+            const evaluation = minimax(newState.board, 'w', depth - 1, -Infinity, Infinity, nextGameState);
 
             if (evaluation < minEval) {
                 minEval = evaluation;
@@ -935,7 +1077,7 @@
     }
 
     // ====================================================================================
-    // 6. INITIALIZATION & EVENT LISTENERS
+    // 7. INITIALIZATION & EVENT LISTENERS
     // ====================================================================================
 
     function initializeGame() {
@@ -950,11 +1092,29 @@
     // Reset button
     document.getElementById('reset-button').addEventListener('click', initializeGame);
 
-    // Fullscreen button logic
+    // Draw Offer button
+    document.getElementById('draw-offer-button').addEventListener('click', handleDrawOffer);
+
+    // Fullscreen button logic (The requested fix for about:blank)
     document.getElementById('fullscreen-button').addEventListener('click', () => {
-        // As requested, opens a new blank tab. On a hosted site, this would open the game URL.
-        window.open(window.location.href, '_blank');
+        // 1. Open a new window with 'about:blank'
+        const newWindow = window.open('about:blank', '_blank');
+
+        if (newWindow) {
+            // 2. Get the entire HTML content of the current document
+            const fullHtml = document.documentElement.outerHTML;
+
+            // 3. Write the content to the new window's document
+            newWindow.document.write(fullHtml);
+            newWindow.document.close();
+            
+            // 4. Optionally adjust the title/focus
+            newWindow.document.title = "AI Chess Master - Full Screen";
+        } else {
+            console.error("Popup blocked. Cannot open full screen.");
+        }
     });
+
 
     // Start the game when the script loads
     window.onload = initializeGame;
