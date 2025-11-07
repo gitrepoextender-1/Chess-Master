@@ -19,7 +19,7 @@
         }
         body {
             font-family: var(--font-inter);
-            background-color: #0d121c; /* Very Dark Blue/Black */
+            background-color: #f8fafc; /* Changed from dark blue to light gray */
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -49,7 +49,7 @@
             height: 95vw;
             max-width: 500px;
             max-height: 500px;
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.7);
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15); /* Lighter shadow */
             border-radius: 12px;
             overflow: hidden;
             touch-action: manipulation;
@@ -165,9 +165,9 @@
         Play Full Screen
     </button>
 
-    <h1 class="text-4xl font-extrabold text-indigo-400 mb-6 mt-4 drop-shadow-lg">AI Chess Master</h1>
+    <h1 class="text-4xl font-extrabold text-gray-800 mb-6 mt-4 drop-shadow-lg">AI Chess Master</h1>
 
-    <div id="status-message" class="text-xl font-semibold text-center rounded-xl p-4 mb-6 w-full max-w-sm md:max-w-xl bg-gray-800 text-yellow-300 shadow-2xl border border-yellow-500/50">
+    <div id="status-message" class="text-xl font-semibold text-center rounded-xl p-4 mb-6 w-full max-w-sm md:max-w-xl bg-white text-gray-800 shadow-2xl border border-gray-300">
         Player's Turn (White)
     </div>
 
@@ -183,7 +183,9 @@
             <!-- Control Buttons -->
             <div class="flex flex-col space-y-3">
                 <button id="reset-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl shadow-2xl transition duration-200 transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-red-500/50">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H8a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.098 7.159a5.002 5.002 0 008.892 2.193 1 1 0 01.077 1.705 7.002 7.002 0 01-12.787-3.093 1 1 0 011.818.995z" clip-rule="evenodd" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+                    </svg>
                     Restart Game
                 </button>
 
@@ -208,8 +210,8 @@
             </div>
 
             <!-- Move History Panel -->
-            <div id="move-history" class="p-4 bg-gray-800 text-gray-200 rounded-xl shadow-2xl border border-gray-700 w-full h-40 overflow-y-auto">
-                <h3 class="font-bold text-lg mb-2 text-indigo-400 border-b border-indigo-400/50 pb-1">Move History (PGN)</h3>
+            <div id="move-history" class="p-4 bg-white text-gray-800 rounded-xl shadow-2xl border border-gray-300 w-full h-40 overflow-y-auto">
+                <h3 class="font-bold text-lg mb-2 text-gray-700 border-b border-gray-400 pb-1">Move History (PGN)</h3>
                 <p id="pgn-output" class="text-sm font-mono whitespace-pre-wrap"></p>
             </div>
         </div>
@@ -355,7 +357,7 @@
         statusEl.textContent = message;
         
         if (isError) {
-            statusEl.classList.remove('bg-gray-800', 'text-yellow-300', 'border-yellow-500/50');
+            statusEl.classList.remove('bg-white', 'text-gray-800', 'border-gray-300');
             statusEl.classList.add('bg-red-600', 'text-white', 'border-red-500');
         }
 
@@ -432,12 +434,12 @@
             if (result.checkmate) {
                 const winner = GameState.turn === 'w' ? 'Black' : 'White';
                 statusEl.textContent = `Checkmate! ${winner} Wins!`;
-                statusEl.classList.remove('text-yellow-300', 'bg-gray-800');
+                statusEl.classList.remove('text-gray-800', 'bg-white');
                 statusEl.classList.add('bg-red-800', 'text-white', 'border-red-500/50');
             } else if (result.stalemate || result.fiftyMove || result.drawOffer) {
                 let reason = result.stalemate ? "Stalemate" : (result.fiftyMove ? "Fifty-Move Rule" : "Draw Agreed");
                 statusEl.textContent = `Draw! Game Over by ${reason}.`;
-                statusEl.classList.remove('text-yellow-300', 'bg-gray-800');
+                statusEl.classList.remove('text-gray-800', 'bg-white');
                 statusEl.classList.add('bg-blue-800', 'text-white', 'border-blue-500/50');
             }
         } else {
@@ -445,7 +447,7 @@
             statusEl.textContent = `${GameState.turn === 'w' ? "Player (White)" : "AI (Black)"}'s Turn${inCheck ? ' - IN CHECK!' : ''}`;
 
             statusEl.classList.remove('bg-red-800', 'bg-blue-800', 'text-white', 'border-red-500/50', 'border-blue-500/50');
-            statusEl.classList.add('bg-gray-800', 'text-yellow-300', 'border-yellow-500/50');
+            statusEl.classList.add('bg-white', 'text-gray-800', 'border-gray-300');
         }
 
         // Update PGN
@@ -1037,7 +1039,7 @@
     function triggerAIMove() {
         showTemporaryStatus(`AI (Black) is thinking... (Depth ${GameState.aiDepth})`);
         statusEl.classList.add('bg-blue-600', 'text-white', 'border-blue-500/50');
-        statusEl.classList.remove('bg-gray-800', 'text-yellow-300', 'border-yellow-500/50');
+        statusEl.classList.remove('bg-white', 'text-gray-800', 'border-gray-300');
 
         setTimeout(() => {
             const bestMove = findBestAIMove(GameState.board, GameState.turn, GameState.aiDepth, GameState);
@@ -1122,4 +1124,3 @@
 </script>
 </body>
 </html>
-
